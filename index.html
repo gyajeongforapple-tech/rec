@@ -26,7 +26,7 @@ h1{font-size:22px;margin:0}
 section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
 h2{font-size:13px;letter-spacing:.06em;color:var(--muted);margin:0;font-weight:600}
 label{font-size:14px;color:var(--muted)}
-input[type=text]{width:100%;font:16px var(--mono);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+select,input[type=text]{width:100%;font:16px var(--mono);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
 .file{display:flex;flex-direction:column;gap:6px}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .seg label{border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);display:flex;flex-direction:column;gap:2px}
@@ -55,7 +55,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
 <main>
   <header>
     <h1>가이드 녹음기</h1>
-    <p class="sub">가이드 음원을 재생하면서 같은 아이폰으로 녹음해 WAV로 저장해요.</p>
+    <p class="sub">가이드 음원을 재생하면서 같은 아이폰으로 녹음해 WAV로 저장해요. 왼쪽 채널은 마이크, 오른쪽 채널은 시간을 맞춘 가이드예요.</p>
   </header>
 
   <section>
@@ -65,15 +65,18 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
       <span id="fileinfo" class="sub">파일을 고르지 않으면 가이드 없이 녹음만 해요.</span>
     </div>
     <div class="seg" role="radiogroup" aria-label="재생 방식">
-      <label><input type="radio" name="mode" value="spk" id="m-spk" checked>스피커<small>M1 · E5 · 기준음이 녹음에 들어감</small></label>
-      <label><input type="radio" name="mode" value="ear" id="m-ear">이어폰<small>E3 · 원곡이 녹음에 안 들어감</small></label>
+      <label><input type="radio" name="mode" value="spk" id="m-spk" checked>스피커<small>스피커로 재생</small></label>
+      <label><input type="radio" name="mode" value="ear" id="m-ear">이어폰<small>유선 이어폰 권장</small></label>
     </div>
+    <label for="sess">오디오 세션 (테스트용)</label>
+    <select id="sess"><option value="auto">자동</option><option value="play-and-record">재생+녹음</option></select>
     <label for="name">파일 이름</label>
     <input id="name" type="text" autocomplete="off">
   </section>
 
   <section>
     <h2>2 · 녹음</h2>
+    <button id="beep" class="ghost" type="button">소리 확인 (1초 삐)</button>
     <button id="go" type="button">녹음 시작</button>
     <div class="stat"><span id="time">0.0 / –</span><span id="peak">– dBFS</span></div>
     <div class="meter"><i id="bar"></i></div>
@@ -93,7 +96,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     <h2>지킬 것</h2>
     <ul>
       <li>녹음 중에는 화면을 끄거나 다른 앱으로 가지 마세요. 녹음이 끊겨요.</li>
-      <li>무음 모드 스위치와 상관없이 소리가 나요. 볼륨은 미리 맞춰 두세요.</li>
+      <li>무음 모드는 끄고, 녹음 전에 '소리 확인'으로 볼륨을 맞추세요.</li>
       <li>미터가 빨개지면 소리가 잘린 거예요. 폰을 조금 멀리 두세요.</li>
     </ul>
   </section>
@@ -120,30 +123,43 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   function say(t, cls){ var m=$("msg"); m.textContent=t; m.className=cls||""; }
   $("name").value = "rec-" + today();
 
-  function ensureCtx(){
-    if (!ctx){
-      var AC = window.AudioContext || window.webkitAudioContext;
-      ctx = new AC();
-    }
-    return ctx;
-  }
 
+  var guideBytes = null;
   $("file").addEventListener("change", function(e){
     var f = e.target.files && e.target.files[0];
-    guide = null; guideName = "";
+    guide = null; guideBytes = null; guideName = "";
     if (!f){ $("fileinfo").textContent = "파일을 고르지 않으면 가이드 없이 녹음만 해요."; return; }
-    $("fileinfo").textContent = "불러오는 중…";
-    ensureCtx();
     f.arrayBuffer().then(function(ab){
-      return new Promise(function(res, rej){ ctx.decodeAudioData(ab, res, rej); });
-    }).then(function(buf){
-      guide = buf; guideName = f.name.replace(/\.[^.]+$/, "");
-      $("fileinfo").textContent = f.name + " · " + buf.duration.toFixed(1) + "초";
+      guideBytes = ab; guideName = f.name.replace(/\.[^.]+$/, "");
+      $("fileinfo").textContent = f.name + " · " + (ab.byteLength/1048576).toFixed(1) + "MB";
       $("name").value = guideName.replace(/-?guide-?/i, "-").replace(/^-|-$/g,"") + "-rec";
       if (/^E3/i.test(guideName)) $("m-ear").checked = true;
       else if (/^(M1|E5)/i.test(guideName)) $("m-spk").checked = true;
-    }).catch(function(){
-      $("fileinfo").textContent = "이 파일은 열 수 없어요. WAV, M4A, MP3 파일을 골라 주세요.";
+    }).catch(function(){ $("fileinfo").textContent = "파일을 읽지 못했어요. 다시 골라 주세요."; });
+  });
+
+  function newCtx(){
+    if (ctx) { try { ctx.close(); } catch(e){} }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    return ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
+  }
+  function decodeGuide(){
+    if (!guideBytes) { guide = null; return Promise.resolve(); }
+    var copy = guideBytes.slice(0);
+    return new Promise(function(res, rej){ ctx.decodeAudioData(copy, res, rej); })
+      .then(function(b){ guide = b; }, function(){ throw new Error("decode"); });
+  }
+
+  $("beep").addEventListener("click", function(){
+    var AC = window.AudioContext || window.webkitAudioContext, c = new AC();
+    var go = c.state === "suspended" ? c.resume() : Promise.resolve();
+    go.then(function(){
+      var o = c.createOscillator(), g = c.createGain();
+      o.frequency.value = 220; g.gain.value = 0.3; o.connect(g); g.connect(c.destination);
+      o.start(); o.stop(c.currentTime + 1);
+      setTimeout(function(){ c.close(); }, 1500);
+      say("소리 확인: 1초 동안 '삐' 소리가 났으면 정상이에요. 안 들렸으면 무음 모드와 볼륨을 확인하세요.");
     });
   });
 
@@ -184,10 +200,10 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   function start(){
     $("go").disabled = true;
     say("마이크를 켜는 중…");
-    try { if (navigator.audioSession) navigator.audioSession.type = "play-and-record"; } catch(e){}
-    ensureCtx();
-    var p = ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
-    p.then(function(){
+    var sessWant = $("sess").value, sessGot = "미지원";
+    try { if (navigator.audioSession) { navigator.audioSession.type = sessWant; sessGot = navigator.audioSession.type; } } catch(e){ sessGot = "오류"; }
+    window.__sess = sessWant + "→" + sessGot;
+    Promise.resolve().then(function(){
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
         throw new Error("nomic");
       return navigator.mediaDevices.getUserMedia({audio:{
@@ -195,6 +211,10 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
       }});
     }).then(function(s){
       stream = s;
+      return newCtx();
+    }).then(function(){
+      return decodeGuide();
+    }).then(function(){
       return buildCapture();
     }).then(function(){
       chunks = []; firstFrame = -1; peakHold = 0; wav = null;
@@ -205,6 +225,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
         player = ctx.createBufferSource(); player.buffer = guide; player.connect(ctx.destination);
         var t0 = ctx.currentTime + lead;
         player.start(t0);
+        window.__ctxState = ctx.state;
         guideStartFrame = Math.round(t0 * ctx.sampleRate);
         total = lead + guide.duration + 2;
         stopTimer = setTimeout(stop, total*1000);
@@ -220,6 +241,8 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
       $("go").disabled = false;
       if (err && (err.name === "NotAllowedError" || err.name === "SecurityError"))
         say("마이크 권한이 막혀 있어요. 설정 › Safari › 마이크에서 허용하고, https 주소로 열었는지 확인해 주세요.", "err");
+      else if (err && err.message === "decode")
+        say("가이드 파일을 열 수 없어요. WAV, M4A, MP3 파일을 골라 주세요.", "err");
       else if (err && err.message === "nomic")
         say("이 주소에서는 마이크를 쓸 수 없어요. https로 올린 주소에서 열어 주세요.", "err");
       else say("녹음을 시작하지 못했어요: " + (err && (err.name||err.message) || "알 수 없음"), "err");
@@ -264,7 +287,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     var tr = stream && stream.getAudioTracks()[0];
     if (tr && tr.getSettings){
       var s = tr.getSettings();
-      settings = "에코제거 " + yn(s.echoCancellation) + " · 잡음제거 " + yn(s.noiseSuppression) + " · 자동음량 " + yn(s.autoGainControl);
+      settings = "입력 " + (tr.label || "?") + "\n에코제거 " + yn(s.echoCancellation) + " · 잡음제거 " + yn(s.noiseSuppression) + " · 자동음량 " + yn(s.autoGainControl);
     }
     cleanup();
     var n = 0; chunks.forEach(function(c){ n += c.length; });
@@ -277,25 +300,42 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     var mode = document.querySelector("input[name=mode]:checked").value;
     var base = ($("name").value.trim() || "rec").replace(/[^\w.\-가-힣]+/g, "_");
     wavName = base + "_" + (mode === "spk" ? "spk" : "ear") + "_" + stamp() + (offsetMs !== null ? "_g" + offsetMs + "ms" : "") + ".wav";
-    wav = new Blob([encodeWav(pcm, sr)], {type:"audio/wav"});
+    var chans = [pcm];
+    if (guide && offsetMs !== null){
+      var g = new Float32Array(n), k0 = guideStartFrame - firstFrame;
+      var gc = guide.numberOfChannels, gd = [];
+      for (var c=0;c<gc;c++) gd.push(guide.getChannelData(c));
+      for (var j=0;j<guide.length;j++){
+        var t = k0 + j; if (t < 0) continue; if (t >= n) break;
+        var sum = 0; for (var c2=0;c2<gc;c2++) sum += gd[c2][j];
+        g[t] = sum / gc;
+      }
+      chans.push(g);
+    }
+    wav = new Blob([encodeWav(chans, sr)], {type:"audio/wav"});
     $("share").disabled = false; $("dl").disabled = false;
     $("info").textContent = wavName + "\n" + (n/sr).toFixed(1) + "초 · " + sr + "Hz · " + (wav.size/1048576).toFixed(1) + "MB"
+      + (chans.length > 1 ? " · 왼쪽=마이크 오른쪽=가이드" : "")
       + (offsetMs !== null ? "\n가이드 시작 ≈ 녹음 " + (offsetMs/1000).toFixed(3) + "초 (출력·입력 지연 미포함)" : "")
-      + (settings ? "\n" + settings : "") + "\n처리 방식 " + procMode;
+      + (settings ? "\n" + settings : "") + "\n처리 방식 " + procMode + " · 세션 " + (window.__sess||"?") + " · 재생 상태 " + (window.__ctxState||"–") + " · 최대 " + peakDb(pcm) + " dBFS";
     say("완료 · 아래에서 저장하세요.");
   }
+  function peakDb(a){ var m=0; for (var i=0;i<a.length;i++){ var v=Math.abs(a[i]); if(v>m) m=v; } return m>0 ? (20*Math.log10(m)).toFixed(1) : "-inf"; }
   function yn(v){ return v === undefined ? "?" : (v ? "켜짐" : "꺼짐"); }
 
-  function encodeWav(pcm, sr){
-    var buf = new ArrayBuffer(44 + pcm.length*2), v = new DataView(buf);
+  function encodeWav(chs, sr){
+    var nc = chs.length, len = chs[0].length, bytes = len*nc*2;
+    var buf = new ArrayBuffer(44 + bytes), v = new DataView(buf);
     var w = function(o, s){ for (var i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
-    w(0,"RIFF"); v.setUint32(4, 36 + pcm.length*2, true); w(8,"WAVE");
-    w(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
-    v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
-    w(36,"data"); v.setUint32(40, pcm.length*2, true);
-    for (var i=0, o=44; i<pcm.length; i++, o+=2){
-      var x = Math.max(-1, Math.min(1, pcm[i]));
-      v.setInt16(o, x < 0 ? x*0x8000 : x*0x7FFF, true);
+    w(0,"RIFF"); v.setUint32(4, 36 + bytes, true); w(8,"WAVE");
+    w(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,nc,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*2*nc,true); v.setUint16(32,2*nc,true); v.setUint16(34,16,true);
+    w(36,"data"); v.setUint32(40, bytes, true);
+    for (var i=0, o=44; i<len; i++){
+      for (var c=0;c<nc;c++, o+=2){
+        var x = Math.max(-1, Math.min(1, chs[c][i]));
+        v.setInt16(o, x < 0 ? x*0x8000 : x*0x7FFF, true);
+      }
     }
     return buf;
   }
