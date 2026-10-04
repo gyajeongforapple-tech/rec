@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>가이드 녹음기</title>
+<style>
+/* 한 열 도구: 위에서 아래로 1 불러오기 → 2 녹음 → 3 저장 */
+:root{
+  --bg:#f4f5f2; --card:#ffffff; --fg:#1d2320; --muted:#5d6862; --line:#d8ddd8;
+  --accent:#1f6f5c; --accent-fg:#ffffff; --rec:#c2362b; --warn:#9a6a00;
+  --body:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141816; --card:#1d2220; --fg:#e8ece9; --muted:#9aa59f; --line:#323a36;
+  --accent:#4fb89c; --accent-fg:#0d1311; --rec:#ef6a5e; --warn:#e0b14a; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);
+  padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 24px)}
+main{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1{font-size:22px;margin:0}
+.sub{color:var(--muted);font-size:14px;margin:2px 0 0}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+h2{font-size:13px;letter-spacing:.06em;color:var(--muted);margin:0;font-weight:600}
+label{font-size:14px;color:var(--muted)}
+select,input[type=text]{width:100%;font:16px var(--mono);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.file{display:flex;flex-direction:column;gap:6px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg label{border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);display:flex;flex-direction:column;gap:2px}
+.seg label small{color:var(--muted);font-size:12px}
+.seg input{margin:0 0 4px}
+.seg label:has(input:checked){border-color:var(--accent);outline:2px solid var(--accent)}
+button{font:600 17px var(--body);padding:14px;border-radius:10px;border:0;width:100%;cursor:pointer}
+button:disabled{opacity:.4}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#go{background:var(--accent);color:var(--accent-fg)}
+#go.on{background:var(--rec);color:#fff}
+.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.stat{display:flex;justify-content:space-between;font:15px var(--mono);font-variant-numeric:tabular-nums}
+.meter{height:10px;background:var(--bg);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--accent)}
+.meter i.clip{background:var(--rec)}
+#msg{font-size:14px;min-height:1.5em}
+#msg.err{color:var(--rec)} #msg.warn{color:var(--warn)}
+#info{font:13px var(--mono);color:var(--muted);white-space:pre-wrap;word-break:break-all}
+ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>가이드 녹음기</h1>
+    <p class="sub">가이드 음원을 재생하면서 같은 아이폰으로 녹음해 WAV로 저장해요.</p>
+  </header>
+
+  <section>
+    <h2>1 · 가이드 불러오기</h2>
+    <div class="file">
+      <input id="file" type="file" accept="audio/*,.wav,.m4a,.mp3">
+      <span id="fileinfo" class="sub">파일을 고르지 않으면 가이드 없이 녹음만 해요.</span>
+    </div>
+    <div class="seg" role="radiogroup" aria-label="재생 방식">
+      <label><input type="radio" name="mode" value="spk" id="m-spk" checked>스피커<small>M1 · E5 · 기준음이 녹음에 들어감</small></label>
+      <label><input type="radio" name="mode" value="ear" id="m-ear">이어폰<small>E3 · 원곡이 녹음에 안 들어감</small></label>
+    </div>
+    <label for="sess">오디오 세션 (테스트용)</label>
+    <select id="sess"><option value="auto">자동</option><option value="play-and-record">재생+녹음</option></select>
+    <label for="name">파일 이름</label>
+    <input id="name" type="text" autocomplete="off">
+  </section>
+
+  <section>
+    <h2>2 · 녹음</h2>
+    <button id="beep" class="ghost" type="button">소리 확인 (1초 삐)</button>
+    <button id="go" type="button">녹음 시작</button>
+    <div class="stat"><span id="time">0.0 / –</span><span id="peak">– dBFS</span></div>
+    <div class="meter"><i id="bar"></i></div>
+    <div id="msg" role="status"></div>
+  </section>
+
+  <section>
+    <h2>3 · 저장</h2>
+    <div class="row">
+      <button id="share" class="ghost" type="button" disabled>공유 · 파일에 저장</button>
+      <button id="dl" class="ghost" type="button" disabled>다운로드</button>
+    </div>
+    <div id="info"></div>
+  </section>
+
+  <section>
+    <h2>지킬 것</h2>
+    <ul>
+      <li>녹음 중에는 화면을 끄거나 다른 앱으로 가지 마세요. 녹음이 끊겨요.</li>
+      <li>무음 모드는 끄고, 녹음 전에 '소리 확인'으로 볼륨을 맞추세요.</li>
+      <li>미터가 빨개지면 소리가 잘린 거예요. 폰을 조금 멀리 두세요.</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var ctx = null, guide = null, guideName = "", stream = null;
+  var src = null, node = null, sink = null, player = null;
+  var chunks = [], firstFrame = -1, guideStartFrame = -1, recording = false;
+  var stopTimer = null, uiTimer = null, peakHold = 0, startedAt = 0, total = 0;
+  var wav = null, wavName = "", wakeLock = null, procMode = "";
+
+  function today(){
+    var d = new Date(), p = function(n){ return (n<10?"0":"")+n; };
+    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+  }
+  function stamp(){
+    var d = new Date(), p = function(n){ return (n<10?"0":"")+n; };
+    return p(d.getHours())+p(d.getMinutes())+p(d.getSeconds());
+  }
+  function say(t, cls){ var m=$("msg"); m.textContent=t; m.className=cls||""; }
+  $("name").value = "rec-" + today();
+
+
+  var guideBytes = null;
+  $("file").addEventListener("change", function(e){
+    var f = e.target.files && e.target.files[0];
+    guide = null; guideBytes = null; guideName = "";
+    if (!f){ $("fileinfo").textContent = "파일을 고르지 않으면 가이드 없이 녹음만 해요."; return; }
+    f.arrayBuffer().then(function(ab){
+      guideBytes = ab; guideName = f.name.replace(/\.[^.]+$/, "");
+      $("fileinfo").textContent = f.name + " · " + (ab.byteLength/1048576).toFixed(1) + "MB";
+      $("name").value = guideName.replace(/-?guide-?/i, "-").replace(/^-|-$/g,"") + "-rec";
+      if (/^E3/i.test(guideName)) $("m-ear").checked = true;
+      else if (/^(M1|E5)/i.test(guideName)) $("m-spk").checked = true;
+    }).catch(function(){ $("fileinfo").textContent = "파일을 읽지 못했어요. 다시 골라 주세요."; });
+  });
+
+  function newCtx(){
+    if (ctx) { try { ctx.close(); } catch(e){} }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    return ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
+  }
+  function decodeGuide(){
+    if (!guideBytes) { guide = null; return Promise.resolve(); }
+    var copy = guideBytes.slice(0);
+    return new Promise(function(res, rej){ ctx.decodeAudioData(copy, res, rej); })
+      .then(function(b){ guide = b; }, function(){ throw new Error("decode"); });
+  }
+
+  $("beep").addEventListener("click", function(){
+    var AC = window.AudioContext || window.webkitAudioContext, c = new AC();
+    var go = c.state === "suspended" ? c.resume() : Promise.resolve();
+    go.then(function(){
+      var o = c.createOscillator(), g = c.createGain();
+      o.frequency.value = 220; g.gain.value = 0.3; o.connect(g); g.connect(c.destination);
+      o.start(); o.stop(c.currentTime + 1);
+      setTimeout(function(){ c.close(); }, 1500);
+      say("소리 확인: 1초 동안 '삐' 소리가 났으면 정상이에요. 안 들렸으면 무음 모드와 볼륨을 확인하세요.");
+    });
+  });
+
+  var workletCode =
+    "class Cap extends AudioWorkletProcessor{process(i){var c=i[0]&&i[0][0];" +
+    "if(c)this.port.postMessage({f:currentFrame,d:c.slice(0)});return true}}" +
+    "registerProcessor('cap',Cap);";
+
+  function buildCapture(){
+    src = ctx.createMediaStreamSource(stream);
+    sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+    var onData = function(frame, data){
+      if (!recording) return;
+      if (firstFrame < 0) firstFrame = frame;
+      chunks.push(data);
+      var pk = 0; for (var k=0;k<data.length;k++){ var a=Math.abs(data[k]); if(a>pk) pk=a; }
+      if (pk > peakHold) peakHold = pk;
+    };
+    if (ctx.audioWorklet && window.AudioWorkletNode){
+      var url = URL.createObjectURL(new Blob([workletCode], {type:"application/javascript"}));
+      return ctx.audioWorklet.addModule(url).then(function(){
+        node = new AudioWorkletNode(ctx, "cap", {numberOfInputs:1, numberOfOutputs:1, channelCount:1, channelCountMode:"explicit"});
+        node.port.onmessage = function(ev){ onData(ev.data.f, ev.data.d); };
+        src.connect(node); node.connect(sink); procMode = "worklet";
+      });
+    }
+    node = ctx.createScriptProcessor(4096, 1, 1);
+    var frames = 0;
+    node.onaudioprocess = function(ev){
+      var d = ev.inputBuffer.getChannelData(0);
+      onData(Math.round(ev.playbackTime*ctx.sampleRate), new Float32Array(d));
+      frames += d.length;
+    };
+    src.connect(node); node.connect(sink); procMode = "script";
+    return Promise.resolve();
+  }
+
+  function start(){
+    $("go").disabled = true;
+    say("마이크를 켜는 중…");
+    var sessWant = $("sess").value, sessGot = "미지원";
+    try { if (navigator.audioSession) { navigator.audioSession.type = sessWant; sessGot = navigator.audioSession.type; } } catch(e){ sessGot = "오류"; }
+    window.__sess = sessWant + "→" + sessGot;
+    Promise.resolve().then(function(){
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+        throw new Error("nomic");
+      return navigator.mediaDevices.getUserMedia({audio:{
+        echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1
+      }});
+    }).then(function(s){
+      stream = s;
+      return newCtx();
+    }).then(function(){
+      return decodeGuide();
+    }).then(function(){
+      return buildCapture();
+    }).then(function(){
+      chunks = []; firstFrame = -1; peakHold = 0; wav = null;
+      $("share").disabled = true; $("dl").disabled = true; $("info").textContent = "";
+      recording = true;
+      var lead = 0.5;
+      if (guide){
+        player = ctx.createBufferSource(); player.buffer = guide; player.connect(ctx.destination);
+        var t0 = ctx.currentTime + lead;
+        player.start(t0);
+        window.__ctxState = ctx.state;
+        guideStartFrame = Math.round(t0 * ctx.sampleRate);
+        total = lead + guide.duration + 2;
+        stopTimer = setTimeout(stop, total*1000);
+      } else { guideStartFrame = -1; total = 0; }
+      startedAt = performance.now();
+      uiTimer = setInterval(tick, 100);
+      if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function(w){ wakeLock=w; }).catch(function(){});
+      $("go").textContent = "멈추기"; $("go").classList.add("on"); $("go").disabled = false;
+      say(guide ? "녹음 중 · 가이드가 끝나면 자동으로 멈춰요." : "녹음 중 · 가이드 없음");
+      checkSettings();
+    }).catch(function(err){
+      cleanup();
+      $("go").disabled = false;
+      if (err && (err.name === "NotAllowedError" || err.name === "SecurityError"))
+        say("마이크 권한이 막혀 있어요. 설정 › Safari › 마이크에서 허용하고, https 주소로 열었는지 확인해 주세요.", "err");
+      else if (err && err.message === "decode")
+        say("가이드 파일을 열 수 없어요. WAV, M4A, MP3 파일을 골라 주세요.", "err");
+      else if (err && err.message === "nomic")
+        say("이 주소에서는 마이크를 쓸 수 없어요. https로 올린 주소에서 열어 주세요.", "err");
+      else say("녹음을 시작하지 못했어요: " + (err && (err.name||err.message) || "알 수 없음"), "err");
+    });
+  }
+
+  function checkSettings(){
+    var tr = stream && stream.getAudioTracks()[0];
+    if (!tr || !tr.getSettings) return;
+    var s = tr.getSettings(), on = [];
+    if (s.echoCancellation) on.push("에코 제거");
+    if (s.noiseSuppression) on.push("잡음 제거");
+    if (s.autoGainControl) on.push("자동 음량");
+    if (on.length) say("녹음 중 · 경고: 아이폰이 " + on.join(", ") + "를 켜 두었어요. 결과를 꼭 확인해야 해요.", "warn");
+  }
+
+  function tick(){
+    var t = (performance.now() - startedAt)/1000;
+    $("time").textContent = t.toFixed(1) + " / " + (total ? total.toFixed(1) : "–");
+    var pk = peakHold; peakHold = 0;
+    var db = pk > 0 ? 20*Math.log10(pk) : -99;
+    $("peak").textContent = (db < -90 ? "–" : db.toFixed(1)) + " dBFS";
+    var bar = $("bar");
+    bar.style.width = Math.max(0, Math.min(100, (db+60)/60*100)) + "%";
+    bar.className = db > -1 ? "clip" : "";
+  }
+
+  function cleanup(){
+    recording = false;
+    clearTimeout(stopTimer); clearInterval(uiTimer);
+    try { if (player) player.stop(); } catch(e){}
+    try { if (src) src.disconnect(); if (node) node.disconnect(); if (sink) sink.disconnect(); } catch(e){}
+    if (stream) stream.getTracks().forEach(function(t){ t.stop(); });
+    if (wakeLock) { try{ wakeLock.release(); }catch(e){} wakeLock = null; }
+    player = src = node = sink = stream = null;
+    $("go").textContent = "녹음 시작"; $("go").classList.remove("on");
+  }
+
+  function stop(){
+    if (!recording) return;
+    var settings = "";
+    var tr = stream && stream.getAudioTracks()[0];
+    if (tr && tr.getSettings){
+      var s = tr.getSettings();
+      settings = "에코제거 " + yn(s.echoCancellation) + " · 잡음제거 " + yn(s.noiseSuppression) + " · 자동음량 " + yn(s.autoGainControl);
+    }
+    cleanup();
+    var n = 0; chunks.forEach(function(c){ n += c.length; });
+    if (!n){ say("녹음된 소리가 없어요. 마이크 권한과 연결을 확인해 주세요.", "err"); return; }
+    var pcm = new Float32Array(n), o = 0;
+    chunks.forEach(function(c){ pcm.set(c, o); o += c.length; });
+    chunks = [];
+    var sr = ctx.sampleRate;
+    var offsetMs = guideStartFrame >= 0 && firstFrame >= 0 ? Math.round((guideStartFrame-firstFrame)/sr*1000) : null;
+    var mode = document.querySelector("input[name=mode]:checked").value;
+    var base = ($("name").value.trim() || "rec").replace(/[^\w.\-가-힣]+/g, "_");
+    wavName = base + "_" + (mode === "spk" ? "spk" : "ear") + "_" + stamp() + (offsetMs !== null ? "_g" + offsetMs + "ms" : "") + ".wav";
+    wav = new Blob([encodeWav(pcm, sr)], {type:"audio/wav"});
+    $("share").disabled = false; $("dl").disabled = false;
+    $("info").textContent = wavName + "\n" + (n/sr).toFixed(1) + "초 · " + sr + "Hz · " + (wav.size/1048576).toFixed(1) + "MB"
+      + (offsetMs !== null ? "\n가이드 시작 ≈ 녹음 " + (offsetMs/1000).toFixed(3) + "초 (출력·입력 지연 미포함)" : "")
+      + (settings ? "\n" + settings : "") + "\n처리 방식 " + procMode + " · 세션 " + (window.__sess||"?") + " · 재생 상태 " + (window.__ctxState||"–") + " · 최대 " + peakDb(pcm) + " dBFS";
+    say("완료 · 아래에서 저장하세요.");
+  }
+  function peakDb(a){ var m=0; for (var i=0;i<a.length;i++){ var v=Math.abs(a[i]); if(v>m) m=v; } return m>0 ? (20*Math.log10(m)).toFixed(1) : "-inf"; }
+  function yn(v){ return v === undefined ? "?" : (v ? "켜짐" : "꺼짐"); }
+
+  function encodeWav(pcm, sr){
+    var buf = new ArrayBuffer(44 + pcm.length*2), v = new DataView(buf);
+    var w = function(o, s){ for (var i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
+    w(0,"RIFF"); v.setUint32(4, 36 + pcm.length*2, true); w(8,"WAVE");
+    w(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
+    w(36,"data"); v.setUint32(40, pcm.length*2, true);
+    for (var i=0, o=44; i<pcm.length; i++, o+=2){
+      var x = Math.max(-1, Math.min(1, pcm[i]));
+      v.setInt16(o, x < 0 ? x*0x8000 : x*0x7FFF, true);
+    }
+    return buf;
+  }
+
+  $("go").addEventListener("click", function(){ recording ? stop() : start(); });
+
+  $("share").addEventListener("click", function(){
+    if (!wav) return;
+    var file = new File([wav], wavName, {type:"audio/wav"});
+    if (navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file]}).catch(function(e){
+        if (e && e.name !== "AbortError") say("공유하지 못했어요. 다운로드 버튼을 써 주세요.", "err");
+      });
+    } else say("이 브라우저는 파일 공유를 지원하지 않아요. 다운로드 버튼을 써 주세요.", "warn");
+  });
+
+  $("dl").addEventListener("click", function(){
+    if (!wav) return;
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(wav); a.download = wavName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 60000);
+  });
+
+  document.addEventListener("visibilitychange", function(){
+    if (document.hidden && recording) { stop(); say("화면을 벗어나서 녹음을 멈췄어요. 여기까지는 저장할 수 있어요.", "warn"); }
+  });
+})();
+</script>
+</body>
+</html>
