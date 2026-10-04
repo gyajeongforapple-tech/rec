@@ -66,10 +66,12 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     </div>
     <div class="seg" role="radiogroup" aria-label="재생 방식">
       <label><input type="radio" name="mode" value="spk" id="m-spk" checked>스피커<small>스피커로 재생</small></label>
-      <label><input type="radio" name="mode" value="ear" id="m-ear">이어폰<small>유선 이어폰 권장</small></label>
+      <label><input type="radio" name="mode" value="ear" id="m-ear">이어폰<small>마이크는 iPhone으로 고르기</small></label>
     </div>
     <label for="sess">오디오 세션 (테스트용)</label>
     <select id="sess"><option value="auto">자동</option><option value="play-and-record">재생+녹음</option></select>
+    <label for="mic">마이크</label>
+    <div class="row"><select id="mic"><option value="">기본</option></select><button id="miclist" class="ghost" type="button" style="flex:0 0 auto;width:auto;padding:10px 12px;font-size:15px">목록 불러오기</button></div>
     <label for="name">파일 이름</label>
     <input id="name" type="text" autocomplete="off">
   </section>
@@ -151,6 +153,26 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
       .then(function(b){ guide = b; }, function(){ throw new Error("decode"); });
   }
 
+  function fillMics(){
+    return navigator.mediaDevices.enumerateDevices().then(function(ds){
+      var sel = $("mic"), keep = sel.value, saved = "";
+      try { saved = localStorage.getItem("mic") || ""; } catch(e){}
+      sel.innerHTML = '<option value="">기본</option>';
+      ds.filter(function(d){ return d.kind === "audioinput"; }).forEach(function(d, i){
+        var o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || ("마이크 " + (i+1));
+        sel.appendChild(o);
+      });
+      sel.value = keep || saved; if (sel.selectedIndex < 0) sel.value = "";
+    });
+  }
+  $("miclist").addEventListener("click", function(){
+    navigator.mediaDevices.getUserMedia({audio:true}).then(function(s){
+      return fillMics().then(function(){ s.getTracks().forEach(function(t){ t.stop(); }); });
+    }).then(function(){ say("마이크 목록을 불러왔어요. iPhone 마이크를 고르세요."); })
+      .catch(function(){ say("마이크 권한이 없어 목록을 불러오지 못했어요.", "err"); });
+  });
+  $("mic").addEventListener("change", function(){ try { localStorage.setItem("mic", $("mic").value); } catch(e){} });
+
   $("beep").addEventListener("click", function(){
     var AC = window.AudioContext || window.webkitAudioContext, c = new AC();
     var go = c.state === "suspended" ? c.resume() : Promise.resolve();
@@ -206,9 +228,9 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     Promise.resolve().then(function(){
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
         throw new Error("nomic");
-      return navigator.mediaDevices.getUserMedia({audio:{
-        echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1
-      }});
+      var c = { echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1 };
+      if ($("mic").value) c.deviceId = { exact: $("mic").value };
+      return navigator.mediaDevices.getUserMedia({audio:c});
     }).then(function(s){
       stream = s;
       return newCtx();
