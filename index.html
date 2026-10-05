@@ -89,6 +89,7 @@ textarea{width:100%;min-height:180px;font:15px/1.5 var(--body);padding:10px;bord
     <select id="sess"><option value="auto">자동</option><option value="play-and-record">재생+녹음</option></select>
     <label for="mic">마이크</label>
     <div class="row"><select id="mic"><option value="">기본</option></select><button id="miclist" class="ghost" type="button" style="flex:0 0 auto;width:auto;padding:10px 12px;font-size:15px">목록 불러오기</button></div>
+    <label style="display:flex;gap:8px;align-items:flex-start;color:var(--fg)"><input id="keepGuide" type="checkbox" checked style="margin-top:4px"><span>가이드를 파일 오른쪽 채널에 같이 저장<br><small style="color:var(--muted)">진단 측정(M1·E3·E5 등)은 켜 두세요. 끄면 내 목소리만 담긴 모노 파일이 돼요.</small></span></label>
     <label for="name">파일 이름</label>
     <input id="name" type="text" autocomplete="off">
   </section>
@@ -385,7 +386,7 @@ textarea{width:100%;min-height:180px;font:15px/1.5 var(--body);padding:10px;bord
     var base = ($("name").value.trim() || "rec").replace(/[^\w.\-가-힣]+/g, "_");
     wavName = base + "_" + (mode === "spk" ? "spk" : "ear") + "_" + stamp() + (offsetMs !== null ? "_g" + offsetMs + "ms" : "") + ".wav";
     var chans = [pcm];
-    if (guide && offsetMs !== null){
+    if (guide && offsetMs !== null && $("keepGuide").checked){
       var g = new Float32Array(n), k0 = guideStartFrame - firstFrame;
       var gc = guide.numberOfChannels, gd = [];
       for (var c=0;c<gc;c++) gd.push(guide.getChannelData(c));
@@ -440,6 +441,8 @@ textarea{width:100%;min-height:180px;font:15px/1.5 var(--body);padding:10px;bord
     sel.value = cur; $("songName").value = songs[cur].name; $("lyr").value = songs[cur].text;
   }
   load(); fillSongs();
+  try { if (localStorage.getItem("keepGuide") === "0") $("keepGuide").checked = false; } catch(e){}
+  $("keepGuide").addEventListener("change", function(){ try { localStorage.setItem("keepGuide", this.checked ? "1" : "0"); } catch(e){} });
   try { var f0 = localStorage.getItem("fs"); if (f0) $("fs").value = f0; } catch(e){}
   $("song").addEventListener("change", function(){ cur = +this.value; save(); fillSongs(); });
   $("songName").addEventListener("input", function(){ songs[cur].name = this.value; save(); var o = $("song").options[cur]; if (o) o.textContent = this.value || ("곡 " + (cur+1)); });
