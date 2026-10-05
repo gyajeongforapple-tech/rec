@@ -97,7 +97,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   <section>
     <h2>지킬 것</h2>
     <ul>
-      <li>녹음 중에는 화면을 끄거나 다른 앱으로 가지 마세요. 녹음이 끊겨요.</li>
+      <li>다른 앱에 다녀와도 녹음이 이어져요. 아이폰이 그 사이 마이크를 멈추면, 끊긴 구간은 무음으로 채우고 저장 정보에 표시해요.</li>
       <li>무음 모드는 끄고, 녹음 전에 '소리 확인'으로 볼륨을 맞추세요.</li>
       <li>미터가 빨개지면 소리가 잘린 거예요. 폰을 조금 멀리 두세요.</li>
     </ul>
@@ -113,6 +113,8 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   var chunks = [], firstFrame = -1, guideStartFrame = -1, recording = false;
   var stopTimer = null, uiTimer = null, peakHold = 0, startedAt = 0, total = 0;
   var wav = null, wavName = "", wakeLock = null, procMode = "";
+  var nextFrame = -1, gapFrames = 0, gapCount = 0, hiddenAt = 0, hiddenMs = 0, hideCount = 0;
+  var startCtx = 0, endCtx = 0;
 
   function today(){
     var d = new Date(), p = function(n){ return (n<10?"0":"")+n; };
@@ -196,6 +198,12 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     var onData = function(frame, data){
       if (!recording) return;
       if (firstFrame < 0) firstFrame = frame;
+      if (nextFrame >= 0 && frame > nextFrame + 256){
+        var miss = frame - nextFrame;
+        chunks.push(new Float32Array(miss));
+        gapFrames += miss; gapCount++;
+      }
+      nextFrame = frame + data.length;
       chunks.push(data);
       var pk = 0; for (var k=0;k<data.length;k++){ var a=Math.abs(data[k]); if(a>pk) pk=a; }
       if (pk > peakHold) peakHold = pk;
@@ -240,6 +248,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
       return buildCapture();
     }).then(function(){
       chunks = []; firstFrame = -1; peakHold = 0; wav = null;
+      nextFrame = -1; gapFrames = 0; gapCount = 0; hiddenMs = 0; hideCount = 0;
       $("share").disabled = true; $("dl").disabled = true; $("info").textContent = "";
       recording = true;
       var lead = 0.5;
@@ -250,8 +259,8 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
         window.__ctxState = ctx.state;
         guideStartFrame = Math.round(t0 * ctx.sampleRate);
         total = lead + guide.duration + 2;
-        stopTimer = setTimeout(stop, total*1000);
       } else { guideStartFrame = -1; total = 0; }
+      startCtx = ctx.currentTime; endCtx = total ? startCtx + total : 0;
       startedAt = performance.now();
       uiTimer = setInterval(tick, 100);
       if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function(w){ wakeLock=w; }).catch(function(){});
@@ -282,7 +291,8 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   }
 
   function tick(){
-    var t = (performance.now() - startedAt)/1000;
+    if (endCtx && ctx && ctx.currentTime >= endCtx) { stop(); return; }
+    var t = ctx ? ctx.currentTime - startCtx : 0;
     $("time").textContent = t.toFixed(1) + " / " + (total ? total.toFixed(1) : "–");
     var pk = peakHold; peakHold = 0;
     var db = pk > 0 ? 20*Math.log10(pk) : -99;
@@ -339,6 +349,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     $("info").textContent = wavName + "\n" + (n/sr).toFixed(1) + "초 · " + sr + "Hz · " + (wav.size/1048576).toFixed(1) + "MB"
       + (chans.length > 1 ? " · 왼쪽=마이크 오른쪽=가이드" : "")
       + (offsetMs !== null ? "\n가이드 시작 ≈ 녹음 " + (offsetMs/1000).toFixed(3) + "초 (출력·입력 지연 미포함)" : "")
+      + "\n화면 벗어남 " + hideCount + "회 (" + (hiddenMs/1000).toFixed(1) + "초) · 녹음이 끊긴 구간 " + gapCount + "회 (" + (gapFrames/sr).toFixed(2) + "초, 무음으로 채움)"
       + (settings ? "\n" + settings : "") + "\n처리 방식 " + procMode + " · 세션 " + (window.__sess||"?") + " · 재생 상태 " + (window.__ctxState||"–") + " · 최대 " + peakDb(pcm) + " dBFS";
     say("완료 · 아래에서 저장하세요.");
   }
@@ -383,7 +394,16 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   });
 
   document.addEventListener("visibilitychange", function(){
-    if (document.hidden && recording) { stop(); say("화면을 벗어나서 녹음을 멈췄어요. 여기까지는 저장할 수 있어요.", "warn"); }
+    if (!recording) return;
+    if (document.hidden){ hiddenAt = performance.now(); hideCount++; return; }
+    if (hiddenAt){ hiddenMs += performance.now() - hiddenAt; hiddenAt = 0; }
+    var tr = stream && stream.getAudioTracks()[0];
+    if (tr && tr.readyState === "ended"){
+      stop(); say("화면을 벗어난 사이 아이폰이 마이크를 껐어요. 여기까지는 저장할 수 있어요.", "warn"); return;
+    }
+    if (ctx && ctx.state !== "running") ctx.resume().catch(function(){});
+    if (navigator.wakeLock && !wakeLock) navigator.wakeLock.request("screen").then(function(w){ wakeLock=w; }).catch(function(){});
+    say("다시 돌아왔어요. 녹음은 계속 중이에요. 끊긴 구간은 저장할 때 표시돼요.", "warn");
   });
 })();
 </script>
