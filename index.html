@@ -17,6 +17,7 @@
   --bg:#141816; --card:#1d2220; --fg:#e8ece9; --muted:#9aa59f; --line:#323a36;
   --accent:#4fb89c; --accent-fg:#0d1311; --rec:#ef6a5e; --warn:#e0b14a; color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);
   padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 24px)}
@@ -49,6 +50,22 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 #msg.err{color:var(--rec)} #msg.warn{color:var(--warn)}
 #info{font:13px var(--mono);color:var(--muted);white-space:pre-wrap;word-break:break-all}
 ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
+textarea{width:100%;min-height:180px;font:15px/1.5 var(--body);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);resize:vertical}
+.small{flex:0 0 auto;width:auto;padding:10px 12px;font-size:15px}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.hint code{font:13px var(--mono);background:var(--bg);padding:0 4px;border-radius:4px}
+#stage{position:fixed;inset:0;z-index:10;background:var(--bg);display:flex;flex-direction:column}
+#stage .bar{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 8px) 16px 8px;border-bottom:1px solid var(--line);background:var(--card)}
+#stage .bar .stat{flex:1;font-size:14px;flex-direction:column;gap:2px}
+#stage .bar button{width:auto;padding:10px 14px;font-size:15px}
+#stopTop{background:var(--rec);color:#fff}
+#stage .meter{height:6px;margin:0 16px}
+#lyrView{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 40vh)}
+#lyrView p{margin:0 0 .35em;line-height:1.45;word-break:keep-all;overflow-wrap:anywhere}
+#lyrView .sec{margin-top:1.1em;color:var(--accent);font-weight:700;font-size:.72em;letter-spacing:.04em}
+#lyrView .sec:first-child{margin-top:0}
+#lyrView .early::before{content:"▶ ";color:var(--rec)}
+#lyrView .gap{height:.6em}
 </style>
 </head>
 <body>
@@ -77,6 +94,24 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   </section>
 
   <section>
+    <h2>가사</h2>
+    <div class="row">
+      <select id="song" aria-label="곡"></select>
+      <button id="songNew" class="ghost small" type="button">새 곡</button>
+      <button id="songDel" class="ghost small" type="button">삭제</button>
+    </div>
+    <input id="songName" type="text" autocomplete="off" placeholder="곡 이름" aria-label="곡 이름">
+    <textarea id="lyr" placeholder="가사를 붙여 넣으세요"></textarea>
+    <p class="hint"><code>[코러스 2/3]</code>처럼 대괄호로 시작하는 줄은 구간 이름, <code>&gt;</code>로 시작하는 줄은 일찍 들어가는 줄로 표시돼요. 가사는 이 폰에만 저장돼요.</p>
+    <div class="row">
+      <label for="fs" style="flex:0 0 auto;align-self:center">글자 크기</label>
+      <input id="fs" type="range" min="18" max="44" step="2" value="28">
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--fg)"><input id="showLyr" type="checkbox" checked> 녹음 중 가사 화면으로 보기</label>
+    <button id="lyrOnly" class="ghost" type="button">가사만 보기</button>
+  </section>
+
+  <section>
     <h2>2 · 녹음</h2>
     <button id="beep" class="ghost" type="button">소리 확인 (1초 삐)</button>
     <button id="go" type="button">녹음 시작</button>
@@ -97,12 +132,22 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   <section>
     <h2>지킬 것</h2>
     <ul>
-      <li>다른 앱에 다녀와도 녹음이 이어져요. 아이폰이 그 사이 마이크를 멈추면, 끊긴 구간은 무음으로 채우고 저장 정보에 표시해요.</li>
+      <li>녹음 중에 다른 앱으로 가면 아이폰이 녹음을 멈춰요. 가사는 이 화면 안에서 보세요.</li>
       <li>무음 모드는 끄고, 녹음 전에 '소리 확인'으로 볼륨을 맞추세요.</li>
       <li>미터가 빨개지면 소리가 잘린 거예요. 폰을 조금 멀리 두세요.</li>
     </ul>
   </section>
 </main>
+
+<div id="stage" hidden>
+  <div class="bar">
+    <div class="stat"><span id="time2">0.0</span><span id="msg2"></span></div>
+    <button id="stageClose" class="ghost" type="button">닫기</button>
+    <button id="stopTop" type="button">멈추기</button>
+  </div>
+  <div class="meter"><i id="bar2"></i></div>
+  <div id="lyrView"></div>
+</div>
 
 <script>
 (function(){
@@ -266,6 +311,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
       if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function(w){ wakeLock=w; }).catch(function(){});
       $("go").textContent = "멈추기"; $("go").classList.add("on"); $("go").disabled = false;
       say(guide ? "녹음 중 · 가이드가 끝나면 자동으로 멈춰요." : "녹음 중 · 가이드 없음");
+      if ($("showLyr").checked) openStage(true);
       checkSettings();
     }).catch(function(err){
       cleanup();
@@ -300,6 +346,11 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     var bar = $("bar");
     bar.style.width = Math.max(0, Math.min(100, (db+60)/60*100)) + "%";
     bar.className = db > -1 ? "clip" : "";
+    if (!$("stage").hidden){
+      $("time2").textContent = t.toFixed(1) + (total ? " / " + total.toFixed(1) : "") + " 초";
+      $("msg2").textContent = (db < -90 ? "–" : db.toFixed(1)) + " dBFS";
+      $("bar2").style.width = bar.style.width; $("bar2").className = bar.className;
+    }
   }
 
   function cleanup(){
@@ -311,6 +362,7 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
     if (wakeLock) { try{ wakeLock.release(); }catch(e){} wakeLock = null; }
     player = src = node = sink = stream = null;
     $("go").textContent = "녹음 시작"; $("go").classList.remove("on");
+    $("stage").hidden = true;
   }
 
   function stop(){
@@ -374,6 +426,58 @@ ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted)}
   }
 
   $("go").addEventListener("click", function(){ recording ? stop() : start(); });
+
+  /* ---- 가사 ---- */
+  var songs = [], cur = 0;
+  function load(){ try { songs = JSON.parse(localStorage.getItem("songs") || "[]"); } catch(e){ songs = []; }
+    if (!songs.length) songs = [{name:"곡 1", text:""}];
+    try { cur = +localStorage.getItem("cur") || 0; } catch(e){ cur = 0; }
+    if (cur >= songs.length) cur = 0; }
+  function save(){ try { localStorage.setItem("songs", JSON.stringify(songs)); localStorage.setItem("cur", String(cur)); } catch(e){} }
+  function fillSongs(){
+    var sel = $("song"); sel.innerHTML = "";
+    songs.forEach(function(sg, i){ var o = document.createElement("option"); o.value = i; o.textContent = sg.name || ("곡 " + (i+1)); sel.appendChild(o); });
+    sel.value = cur; $("songName").value = songs[cur].name; $("lyr").value = songs[cur].text;
+  }
+  load(); fillSongs();
+  try { var f0 = localStorage.getItem("fs"); if (f0) $("fs").value = f0; } catch(e){}
+  $("song").addEventListener("change", function(){ cur = +this.value; save(); fillSongs(); });
+  $("songName").addEventListener("input", function(){ songs[cur].name = this.value; save(); var o = $("song").options[cur]; if (o) o.textContent = this.value || ("곡 " + (cur+1)); });
+  $("lyr").addEventListener("input", function(){ songs[cur].text = this.value; save(); });
+  $("songNew").addEventListener("click", function(){ songs.push({name:"곡 " + (songs.length+1), text:""}); cur = songs.length-1; save(); fillSongs(); $("songName").focus(); });
+  var delArmed = false;
+  $("songDel").addEventListener("click", function(){
+    if (!delArmed){ delArmed = true; this.textContent = "정말 삭제"; var b = this; setTimeout(function(){ delArmed = false; b.textContent = "삭제"; }, 3000); return; }
+    delArmed = false; this.textContent = "삭제";
+    songs.splice(cur, 1); if (!songs.length) songs = [{name:"곡 1", text:""}]; cur = Math.max(0, cur-1); save(); fillSongs();
+  });
+  $("fs").addEventListener("input", function(){ $("lyrView").style.fontSize = this.value + "px"; try { localStorage.setItem("fs", this.value); } catch(e){} });
+
+  function renderLyrics(){
+    var v = $("lyrView"); v.innerHTML = ""; v.style.fontSize = $("fs").value + "px";
+    var text = songs[cur].text || "";
+    if (!text.trim()){ var e = document.createElement("p"); e.className = "sec"; e.textContent = "가사가 없어요. 가사 칸에 붙여 넣으세요."; v.appendChild(e); }
+    text.split(/\r?\n/).forEach(function(line){
+      var t = line.trim(), el;
+      if (!t){ el = document.createElement("div"); el.className = "gap"; }
+      else if (t[0] === "["){ el = document.createElement("p"); el.className = "sec"; el.textContent = t.replace(/^\[|\]$/g, ""); }
+      else if (t[0] === ">"){ el = document.createElement("p"); el.className = "early"; el.textContent = t.replace(/^>\s*/, ""); }
+      else { el = document.createElement("p"); el.textContent = t; }
+      v.appendChild(el);
+    });
+    v.scrollTop = 0;
+  }
+  function openStage(rec){
+    renderLyrics();
+    $("stopTop").hidden = !rec; $("stageClose").hidden = !!rec;
+    $("time2").textContent = rec ? "녹음 중" : (songs[cur].name || "가사");
+    $("stage").hidden = false;
+    if (!rec && navigator.wakeLock && !wakeLock) navigator.wakeLock.request("screen").then(function(w){ wakeLock = w; }).catch(function(){});
+  }
+  function closeStage(){ $("stage").hidden = true; if (!recording && wakeLock){ try{ wakeLock.release(); }catch(e){} wakeLock = null; } }
+  $("lyrOnly").addEventListener("click", function(){ openStage(false); });
+  $("stageClose").addEventListener("click", closeStage);
+  $("stopTop").addEventListener("click", function(){ stop(); });
 
   $("share").addEventListener("click", function(){
     if (!wav) return;
